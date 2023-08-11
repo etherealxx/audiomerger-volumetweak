@@ -7,4 +7,4 @@ ffmpeg.exe must exist on the script's directory.
 
 The `preview current volume` feature will calculate which 10 seconds part of the video has the loudest voice (on the 2nd audio track), and then showing preview of combined audio on that specific part.
 
-![image](https://github.com/etherealxx/audiomerger-volumetweak/assets/64251396/6948db80-1020-47ae-a275-940068fa1d72)
+![image](https://github.com/etherealxx/audiomerger-volumetweak/assets/64251396/981cbcbc-af6a-496a-8fa4-497cd7609f90)
