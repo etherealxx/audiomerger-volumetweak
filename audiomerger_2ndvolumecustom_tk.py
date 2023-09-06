@@ -7,12 +7,15 @@ import threading
 import numpy as np
 import datetime
 
-ffmpegpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg.exe")
-# print(ffmpegpath)
+pythonfile_dir = os.path.dirname(os.path.abspath(__file__))
+ffmpegpath = os.path.join(pythonfile_dir, "ffmpeg.exe")
+print(ffmpegpath)
 path = ""
 isprocessing = False
 temppaths = []
 loudestsegments_dict = dict()
+combine_h264_button = None
+root = None
 
 class LoadingAnimation:
     def __init__(self, canvas, x, y, radius=10, speed=15):
@@ -61,8 +64,30 @@ def stop_loading_animation():
     loading_animation.stop_loading()
     # loading_animation.canvas.destroy()
 
+def check_codec_bitrate(info):
+    # command = [ffmpegpath, '-i', video_path]
+    # output = subprocess.getoutput(command)
+
+    lines = info.split('\n')
+    video_info = None
+
+    for line in lines:
+        if 'Stream #0' in line and "Video:" in line:
+            video_info = line.strip()
+            # print(video_info)
+            break
+
+    for segment in video_info.split(","):
+        if "Video:" in segment:
+            codec = segment.partition("Video:")[2].strip().split()[0]
+        if "kb/s" in segment:
+            bitrate = segment.strip().split()[0]
+
+    return codec, bitrate
+
 def on_drop(event):
     global path
+    global combine_h264_button
     threadinfo.configure(text="")
     if not isprocessing:
         path = event.data
@@ -70,8 +95,22 @@ def on_drop(event):
             path = os.path.normpath(path.lstrip("{").rstrip("}"))
             if path.endswith(".mp4") or path.endswith(".mkv"):
                 if os.path.exists(ffmpegpath):
-                    audiotrackscount = subprocess.getoutput(f'"{ffmpegpath}" -i "{path}" 2>&1 | find /c /i "audio"')
-                    path_label.config(text=f"Video path:\n{path}\n(The video contains {audiotrackscount} audio tracks)")
+                    video_info = subprocess.getoutput(f"\"{ffmpegpath}\" -i \"{path}\"")
+                    # print(video_info)
+                    v_codec, v_bitrate = check_codec_bitrate(video_info)
+                    audiotrackscount = subprocess.run('find /c /i "audio"', input=video_info, text=True,
+                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
+                    # audiotrackscount = subprocess.getoutput(f'"{ffmpegpath}" -i "{path}" 2>&1 | find /c /i "audio"')
+                    path_label.config(text=f"Video path:\n{path}\n(The video contains {audiotrackscount} audio tracks)\n"
+                                      f"(Codec: {v_codec}, Bitrate: {v_bitrate} kb/s)")
+                    if v_codec:
+                        if v_codec == "hevc":
+                            combine_h264_button.pack(side=tk.LEFT)
+                            combine_h264_button.configure(state="normal")
+                        else:
+                            combine_h264_button.configure(state="disabled")
+                            combine_h264_button.pack_forget()
+                        
                 else:
                     path_label.config(text=f"Video path:\n{path}")
                 combinebutton.configure(state="normal")
@@ -79,7 +118,8 @@ def on_drop(event):
             else:
                 path_label.config(text=f"Selekted file is not MKV/MP4:\n{path}")
                 combinebutton.configure(state="disabled")
-                previewbutton.configure(state="normal")
+                previewbutton.configure(state="disabled")
+                combine_h264_button.configure(state="disabled")
 
 def run_command(commandtorun):
     if os.path.exists(ffmpegpath):
@@ -116,8 +156,11 @@ def run_ffmpeg(commandtorun):
     global canvas
     combinebutton.config(state=tk.DISABLED)
     previewbutton.config(state=tk.DISABLED)
+    if combine_h264_button.winfo_ismapped():
+        combine_h264_button.config(state=tk.DISABLED)
+
     isprocessing = True
-    canvas.pack(side=tk.LEFT)
+    canvas.pack() # side=tk.LEFT
     
     volumeslider.configure(state="disabled")
     filedir = os.path.dirname(path)
@@ -129,10 +172,19 @@ def run_ffmpeg(commandtorun):
     if not volume:
             volume = 1.0
          
-    if commandtorun == "combine":
+    if commandtorun.startswith("combine"):
         mergedpath = os.path.join(filedir, barefilename + "_merged" + ".mp4")
-        threadinfo.configure(text="Merging the audio track with chosen volume...")
-        cmd = f'"{ffmpegpath}" -i "{path}" -c:v copy -filter_complex "[0:1]volume=1.0[a];[0:2]volume={volume}[b];[a][b]amerge=inputs=2" -movflags faststart -threads {threadsslider.get()} -y "{mergedpath}"'
+        
+        if commandtorun == "combine_h264":
+            threadinfo.configure(text="Merging the audio track and encoding to h264...")
+            video_info = subprocess.getoutput(f"\"{ffmpegpath}\" -i \"{path}\"")
+            codec, bitrate = check_codec_bitrate(video_info)
+            # cmd = f'"{ffmpegpath}" -i "{path}" -c:v libx264 -b:v {str(2 * int(bitrate))}k -filter_complex "[0:1]volume=1.0[a];[0:2]volume={volume}[b];[a][b]amerge=inputs=2" -movflags faststart -threads {threadsslider.get()} -y "{mergedpath}"'
+            cmd = f'"{ffmpegpath}" -i "{path}" -c:v libx264 -b:v {str(2 * int(bitrate))}k -filter_complex "[0:1]volume=1.0[a];[0:2]volume={volume}[b];[a][b]amerge=inputs=2[c]" -map 0:0 -map "[c]" -movflags faststart -threads {threadsslider.get()} -y "{mergedpath}"' #@note
+        else:
+            threadinfo.configure(text="Merging the audio track with chosen volume...")
+            cmd = f'"{ffmpegpath}" -i "{path}" -c:v copy -filter_complex "[0:1]volume=1.0[a];[0:2]volume={volume}[b];[a][b]amerge=inputs=2" -movflags faststart -threads {threadsslider.get()} -y "{mergedpath}"'
+        print(cmd)
         subprocess.run(cmd, shell=True)
         threadinfo.configure(text="Audio merged.")
         
@@ -150,7 +202,7 @@ def run_ffmpeg(commandtorun):
         if not path in loudestsegments_dict:
             threadinfo.configure(text="Analyzing the loudest part of the 2nd track...")
             command = [
-                r"H:\ffmpeg", "-hide_banner", "-i", m4apath_2,
+                f"{ffmpegpath}", "-hide_banner", "-i", m4apath_2,
                 "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1",
                 "-f", "s16le", "-"
             ]
@@ -218,12 +270,13 @@ def run_ffmpeg(commandtorun):
     
     volumeslider.configure(state="normal")
     
-    
     stop_loading_animation()
     canvas.pack_forget()
     isprocessing = False
     combinebutton.config(state=tk.NORMAL)
     previewbutton.config(state=tk.NORMAL)
+    if combine_h264_button.winfo_ismapped():
+        combine_h264_button.config(state=tk.NORMAL)
 
 def start_thread(commandtorun):
     global ffmpeg_thread
@@ -241,10 +294,25 @@ def on_closing():
            os.remove(tempfile)
     stop_thread()
 
+def restartprogram():
+    global root
+    on_closing() # destroy root
+    batchpath = os.path.join(pythonfile_dir, os.path.splitext(__file__)[0] + ".bat")
+    if os.path.exists(batchpath):
+        os.startfile(batchpath)
+
+def opencmd():
+    command = f'start cmd /k "cd /d {pythonfile_dir}"'
+    subprocess.run(command, shell=True)
+
+def openexplorer():
+    command = f'explorer.exe {pythonfile_dir}'
+    subprocess.run(command, shell=True)
+
 root = TkinterDnD.Tk()
 root.title("AudioMerger_2ndTrackVolume")
-window_width = 430
-window_height = 560
+window_width = 450
+window_height = 630
 root.geometry(f"{window_width}x{window_height}")
 root.protocol("WM_DELETE_WINDOW", on_closing)
 
@@ -295,10 +363,21 @@ previewbutton.pack(side=tk.LEFT)
 combinebutton = ttk.Button(buttonframe, text="Merge Audio", command=lambda: run_command("combine"), state="disabled")
 combinebutton.pack(side=tk.LEFT)
 
-canvas = tk.Canvas(buttonframe, width=40, height=40)
+combine_h264_button = ttk.Button(buttonframe, text="Merge Audio (h264)", command=lambda: run_command("combine_h264"), state="disabled")
+
+canvas = tk.Canvas(root, width=40, height=40)
 
 threadinfo = ttk.Label(root, text="")
 threadinfo.pack()
+
+menubar = tk.Menu(root)
+filemenu = tk.Menu(menubar, tearoff=0)
+filemenu.add_command(label="Restart", command=lambda: restartprogram())
+filemenu.add_command(label="Open cmd Here", command=lambda: opencmd())
+filemenu.add_command(label="Open Explorer Here", command=lambda: openexplorer())
+
+menubar.add_cascade(label="Tools", menu=filemenu)
+root.config(menu=menubar)
 
 # Configure drag-and-drop events for the free space
 free_space.drop_target_register(DND_FILES)
