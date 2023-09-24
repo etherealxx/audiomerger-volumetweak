@@ -9,7 +9,10 @@ import datetime
 
 pythonfile_dir = os.path.dirname(os.path.abspath(__file__))
 ffmpegpath = os.path.join(pythonfile_dir, "ffmpeg.exe")
-print(ffmpegpath)
+if os.path.exists(ffmpegpath):
+    print(ffmpegpath)
+else:
+    print("ffmpeg.exe doesnt exist on the current directory")
 path = ""
 isprocessing = False
 temppaths = []
