@@ -6,13 +6,18 @@ import subprocess
 import threading
 import numpy as np
 import datetime
+import shutil
 
 pythonfile_dir = os.path.dirname(os.path.abspath(__file__))
 ffmpegpath = os.path.join(pythonfile_dir, "ffmpeg.exe")
 if os.path.exists(ffmpegpath):
     print(ffmpegpath)
+elif shutil.which("ffmpeg"):
+    ffmpegpath = shutil.which("ffmpeg")
+    print(ffmpegpath)
 else:
     print("ffmpeg.exe doesnt exist on the current directory")
+
 path = ""
 isprocessing = False
 temppaths = []
@@ -45,9 +50,9 @@ class LoadingAnimation:
         y0 = self.y - self.radius
         x1 = self.x + self.radius
         y1 = self.y + self.radius
-        
+
         self.canvas.create_oval(x0, y0, x1, y1, outline="gray", width=1, tags="circle")
-        
+
         arc = self.canvas.create_arc(x0, y0, x1, y1, start=self.angle, extent=45, fill="green", outline="", tags="loading")
         self.angle = (self.angle + 10) % 360
         self.canvas.after(self.speed, self.draw_loading)
@@ -113,7 +118,7 @@ def on_drop(event):
                         else:
                             combine_h264_button.configure(state="disabled")
                             combine_h264_button.pack_forget()
-                        
+
                 else:
                     path_label.config(text=f"Video path:\n{path}")
                 combinebutton.configure(state="normal")
@@ -126,7 +131,7 @@ def on_drop(event):
 
 def run_command(commandtorun):
     if os.path.exists(ffmpegpath):
-        
+
         start_thread(commandtorun)
         start_loading_animation()
         # cmd = f'"{ffmpegpath}" -i "{path}" -c:v copy -filter_complex "[0:1]volume=1.0[a];[0:2]volume={volume}[b];[a][b]amerge=inputs=2" -movflags faststart -threads {threadsslider.get()} -y "{mergedpath}"'
@@ -154,7 +159,7 @@ def run_ffmpeg(commandtorun):
             if os.path.exists(pathtocheck):
                 return
         subprocess.run(cmd, shell=True)
-        
+
     global isprocessing
     global canvas
     combinebutton.config(state=tk.DISABLED)
@@ -164,20 +169,20 @@ def run_ffmpeg(commandtorun):
 
     isprocessing = True
     canvas.pack() # side=tk.LEFT
-    
+
     volumeslider.configure(state="disabled")
     filedir = os.path.dirname(path)
     barefilename, ext = os.path.splitext(os.path.basename(path))
-    
+
     volume = volumeslider.get()
     if 1 <= volume <= 100:
         volume = round(volume / 100, 2)
     if not volume:
             volume = 1.0
-         
+
     if commandtorun.startswith("combine"):
         mergedpath = os.path.join(filedir, barefilename + "_merged" + ".mp4")
-        
+
         if commandtorun == "combine_h264":
             threadinfo.configure(text="Merging the audio track and encoding to h264...")
             video_info = subprocess.getoutput(f"\"{ffmpegpath}\" -i \"{path}\"")
@@ -190,18 +195,18 @@ def run_ffmpeg(commandtorun):
         print(cmd)
         subprocess.run(cmd, shell=True)
         threadinfo.configure(text="Audio merged.")
-        
+
     elif commandtorun == "preview":
         m4apath_1 = os.path.join(filedir, barefilename + "_1sttrackaudio" + ".m4a")
         m4apath_2 = os.path.join(filedir, barefilename + "_2ndtrackaudio" + ".m4a")
-        
+
         cmd = f'"{ffmpegpath}" -hide_banner -i "{path}" -map 0:a:0 -vn -acodec copy -threads {threadsslider.get()} "{m4apath_1}" -y'
         threadinfo.configure(text="Extracting first audio track...")
         runifnopathyet(cmd, m4apath_1)
         cmd = f'"{ffmpegpath}" -hide_banner -i "{path}" -map 0:a:1 -vn -acodec copy -threads {threadsslider.get()} "{m4apath_2}" -y'
         threadinfo.configure(text="Extracting second audio track...")
         runifnopathyet(cmd, m4apath_2)
-        
+
         if not path in loudestsegments_dict:
             threadinfo.configure(text="Analyzing the loudest part of the 2nd track...")
             command = [
@@ -213,9 +218,9 @@ def run_ffmpeg(commandtorun):
 
             # Convert the raw audio data to a numpy array
             samples = np.frombuffer(audio_data, dtype=np.int16)
-            
+
             split_interval=10
-            
+
             # Calculate the number of samples per split interval
             samples_per_split = int(split_interval * 44100)  # Assuming a sample rate of 44100 Hz
 
@@ -233,13 +238,13 @@ def run_ffmpeg(commandtorun):
                 if segment_amplitude > loudest_amplitude:
                     loudest_amplitude = segment_amplitude
                     loudest_segment = (segment_start, segment_end)
-                    
+
             if loudest_segment:
                 loudest_start_time = samples_to_time(loudest_segment[0])
                 loudest_end_time = samples_to_time(loudest_segment[1])
 
                 loudestsegments_dict[path] = (loudest_start_time, loudest_end_time)
-                
+
         if path in loudestsegments_dict:
             print("Loudest segment start:", loudestsegments_dict[path][0])
             print("Loudest segment end:", loudestsegments_dict[path][1])
@@ -257,9 +262,9 @@ def run_ffmpeg(commandtorun):
         # loudestpath = os.path.join(filedir, barefilename + "_loudest" + ".m4a")
         # cmd = f'"{ffmpegpath}" -hide_banner -i "{combinedpath}" -ss {loudestsegments_dict[path][0]} -to {loudestsegments_dict[path][1]} -c copy -threads {threadsslider.get()} "{loudestpath}" -y'
         # subprocess.run(cmd, shell=True)
-        
+
         subprocess.Popen(["start", "", loudestpath], shell=True)
-        
+
         if path in loudestsegments_dict:
             print(f"Current preview volume: {volume}")
             print("Loudest segment start:", loudestsegments_dict[path][0])
@@ -270,9 +275,9 @@ def run_ffmpeg(commandtorun):
             if os.path.exists(tempfile):
                 temppaths.append(tempfile)
         threadinfo.configure(text="Loudest audio preview was made.")
-    
+
     volumeslider.configure(state="normal")
-    
+
     stop_loading_animation()
     canvas.pack_forget()
     isprocessing = False
