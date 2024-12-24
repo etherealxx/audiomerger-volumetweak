@@ -77,20 +77,33 @@ def check_codec_bitrate(info):
     # output = subprocess.getoutput(command)
 
     lines = info.split('\n')
-    video_info = None
+    video_info = ""
+    duration_bitrate_info = ""
+    video_str = "Video:"
+    bitrate_str = 'bitrate:'
+    codec = ""
+    bitrate = ""
 
     for line in lines:
-        if 'Stream #0' in line and "Video:" in line:
+        if bitrate_str in line:
+            duration_bitrate_info = line.strip()
+
+        if 'Stream #0' in line and video_str in line:
             video_info = line.strip()
-            # print(video_info)
             break
 
     for segment in video_info.split(","):
-        if "Video:" in segment:
-            codec = segment.partition("Video:")[2].strip().split()[0]
-        if "kb/s" in segment:
-            bitrate = segment.strip().split()[0]
+        if video_str in segment:
+            codec = segment.partition(video_str)[2].strip().split()[0]
+            break
 
+    for segment in duration_bitrate_info.split(","):
+        if bitrate_str in segment:
+            bitrate = segment.partition(bitrate_str)[2].strip().split()[0]
+            break
+
+    # if codec: print(codec)
+    # if bitrate: print(bitrate)
     return codec, bitrate
 
 def on_drop(event):
@@ -104,7 +117,6 @@ def on_drop(event):
             if path.endswith(".mp4") or path.endswith(".mkv"):
                 if os.path.exists(ffmpegpath):
                     video_info = subprocess.getoutput(f"\"{ffmpegpath}\" -i \"{path}\"")
-                    # print(video_info)
                     v_codec, v_bitrate = check_codec_bitrate(video_info)
                     audiotrackscount = subprocess.run('find /c /i "audio"', input=video_info, text=True,
                                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
